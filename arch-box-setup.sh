@@ -65,7 +65,7 @@ run_host() {
 
 	echo "Copying temporary SSH key to VM"
 	cat $TMPKEY.pub | \
-		ssh -o 'StrictHostKeyChecking accept-new' root@$VMIP -- \
+		ssh -o 'StrictHostKeyChecking=no' -o 'UserKnownHostsFile=/dev/null' root@$VMIP -- \
 			"rm -rf /root/.ssh; mkdir /root/.ssh; cat >/root/.ssh/authorized_keys </dev/stdin"
 
 	echo "Copying install script to VM"
@@ -85,7 +85,15 @@ run_host() {
 
 	echo "Running install script in VM"
 	ssh -i $TMPKEY root@$VMIP -- \
-		NEW_MIRRORLIST=$NEW_MIRRORLIST USE_CACHE=$USE_CACHE CACHE_FILE=$CACHE_FILE NEW_CACHE=$NEW_CACHE USER_NAME=$USER_NAME USER_PASS=$USER_PASS ROOT_PASS=$ROOT_PASS /$SCRIPT_NAME preinstall
+		NEW_MIRRORLIST=$NEW_MIRRORLIST \
+		USE_CACHE=$USE_CACHE \
+		CACHE_FILE=$CACHE_FILE \
+		NEW_CACHE=$NEW_CACHE \
+		USER_NAME=$USER_NAME \
+		USER_PASS=$USER_PASS \
+		ROOT_PASS=$ROOT_PASS \
+		VM=$VM \
+		/$SCRIPT_NAME preinstall
 
 	if [ "$NEW_CACHE" == "yes" ]; then # download new package cache from vm
 		echo "Retrieving new package cache"
@@ -122,6 +130,8 @@ run_preinstall() {
 	echo "Chaing EFI partition type to make it bootable"
 	sfdisk --part-type /dev/sda 1 C12A7328-F81F-11D2-BA4B-00A0C93EC93B
 
+	sleep 2 # axaxaxaxaxaxaxaxaxax
+
 	echo "Mounting partitions"
 	mount /dev/sda2 /mnt
 	mkdir /mnt/boot
@@ -131,18 +141,18 @@ run_preinstall() {
 		echo "Updating mirror list"
 		reflector --latest 10 --sort rate --country "United Kingdom" --save /etc/pacman.d/mirrorlist
 	else
-		echo "Setting mirror list" # 20210506
+		echo "Setting mirror list" # 20211208
 		cat <<-"E" > /etc/pacman.d/mirrorlist
+			Server = http://www.mirrorservice.org/sites/ftp.archlinux.org/$repo/os/$arch
+			Server = http://mirrors.melbourne.co.uk/archlinux/$repo/os/$arch
 			Server = https://archlinux.uk.mirror.allworldit.com/archlinux/$repo/os/$arch
-			Server = http://archlinux.uk.mirror.allworldit.com/archlinux/$repo/os/$arch
-			Server = http://mirrors.manchester.m247.com/arch-linux/$repo/os/$arch
-			Server = https://mirror.bytemark.co.uk/archlinux/$repo/os/$arch
+			Server = https://mirrors.melbourne.co.uk/archlinux/$repo/os/$arch
 			Server = http://lon.mirror.rackspace.com/archlinux/$repo/os/$arch
-			Server = http://mirror.bytemark.co.uk/archlinux/$repo/os/$arch
-			Server = https://lon.mirror.rackspace.com/archlinux/$repo/os/$arch
+			Server = https://www.mirrorservice.org/sites/ftp.archlinux.org/$repo/os/$arch
+			Server = rsync://rsync.mirrorservice.org/ftp.archlinux.org/$repo/os/$arch
+			Server = http://archlinux.uk.mirror.allworldit.com/archlinux/$repo/os/$arch
+			Server = rsync://mirrors.melbourne.co.uk/archlinux/$repo/os/$arch
 			Server = rsync://archlinux.uk.mirror.allworldit.com/archlinux/$repo/os/$arch
-			Server = rsync://mirror.bytemark.co.uk/archlinux/$repo/os/$arch
-			Server = rsync://mirrors.manchester.m247.com/archlinux/$repo/os/$arch
 		E
 	fi
 
@@ -162,6 +172,13 @@ run_preinstall() {
 		fi
 	fi
 
+	# If you get pacman errors, use a newer ISO
+	#	echo "Updating pacman"
+	#	pacman-key --init
+	#	pacman-key --populate archlinux
+	#	pacman-key --refresh-keys
+	#	pacman -Sy archlinux-keyring
+
 	echo "Installing base packages"
 	pacstrap /mnt \
 		base \
@@ -170,6 +187,7 @@ run_preinstall() {
 		linux-lts \
 		linux-firmware \
 		neovim \
+		xsel \
 		man-db \
 		man-pages \
 		grub \
@@ -193,12 +211,22 @@ run_preinstall() {
 		ripgrep \
 		fd \
 		python \
+		python-pip \
+		rustup \
 		go \
 		openssh \
 		git \
 		open-vm-tools \
 		gtkmm3 \
-		dmenu
+		dmenu \
+		clang \
+		docker \
+		unrar \
+		zip \
+		wget \
+		jq \
+		bat \
+		htop
 
 	echo "Generating fstab" # no fsck, no atime
 	genfstab -U /mnt | sed 's/0 [0-9]$/0 0/g;s/relatime/noatime/g' > /mnt/etc/fstab
@@ -211,6 +239,7 @@ run_preinstall() {
 		USER_NAME=$USER_NAME
 		USER_PASS=$USER_PASS
 		ROOT_PASS=$ROOT_PASS
+		VM=$VM
 	E
 	arch-chroot /mnt /$SCRIPT_NAME chroot
 
